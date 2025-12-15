@@ -5,7 +5,7 @@ spring:
   application:
     name: identity-access-service
   datasource:
-    url: jdbc:postgresql://localhost:5432/iam
+    url: jdbc:postgresql://localhost:5433/iam
     username: iam
     password: iam
   jpa:

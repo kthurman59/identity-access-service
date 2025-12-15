@@ -6,9 +6,10 @@ services:
       POSTGRES_USER: iam
       POSTGRES_PASSWORD: iam
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - iam_pgdata:/var/lib/postgresql/data
 
 volumes:
   iam_pgdata:
+
