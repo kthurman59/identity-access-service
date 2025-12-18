@@ -2,8 +2,8 @@ create extension if not exists pgcrypto;
 
 create table iam_tenant (
   id uuid primary key default gen_random_uuid(),
-  slug varchar(64) not null,
-  name varchar(128) not null,
+  slug varchar(255) not null unique,
+  name varchar(255) not null,
   status varchar(16) not null default 'ACTIVE',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),

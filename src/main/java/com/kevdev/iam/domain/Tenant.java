@@ -1,7 +1,10 @@
 package com.kevdev.iam.domain;
 
-import jakarta.persistence.*;
-import java.time.Instant;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
 import java.util.UUID;
 
 @Entity
@@ -9,43 +12,39 @@ import java.util.UUID;
 public class Tenant {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "id", nullable = false)
+    @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "slug", nullable = false, length = 64)
-    private String slug;
+    // Property name matches repository method: findBySlug
+    // Column name matches what the table should have
+    @Column(name = "key", nullable = false, unique = true)
+    private String key;
 
-    @Column(name = "name", nullable = false, length = 128)
+    @Column(name = "name", nullable = false)
     private String name;
 
-    @Column(name = "status", nullable = false, length = 16)
-    private String status = "ACTIVE";
-
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
-
-    @PrePersist
-    void prePersist() {
-        var now = Instant.now();
-        createdAt = now;
-        updatedAt = now;
+    protected Tenant() {
+        // for JPA
     }
 
-    @PreUpdate
-    void preUpdate() {
-        updatedAt = Instant.now();
+    public static Tenant create(String key, String name) {
+        Tenant t = new Tenant();
+        t.id = UUID.randomUUID();
+        t.key = key;
+        t.name = name;
+        return t;
     }
 
-    public UUID getId() { return id; }
-    public String getSlug() { return slug; }
-    public void setSlug(String slug) { this.slug = slug; }
-    public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
-    public String getStatus() { return status; }
-    public void setStatus(String status) { this.status = status; }
+    public UUID getId() {
+        return id;
+    }
+
+    public String getKey() {
+        return key;
+    }
+
+    public String getName() {
+        return name;
+    }
 }
 

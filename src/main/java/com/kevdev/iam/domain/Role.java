@@ -1,57 +1,60 @@
 package com.kevdev.iam.domain;
 
-import jakarta.persistence.*;
-import java.time.Instant;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.Table;
+
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Table(
-    name = "iam_role",
-    uniqueConstraints = {
-        @UniqueConstraint(name = "uq_iam_role_tenant_name", columnNames = {"tenant_id", "name"})
-    }
-)
+@Table(name = "iam_role")
 public class Role {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "id", nullable = false)
     private UUID id;
 
-    @ManyToOne(optional = false, fetch = FetchType.LAZY)
-    @JoinColumn(name = "tenant_id", nullable = false)
+    @ManyToOne(optional = false)
     private Tenant tenant;
 
-    @Column(name = "name", nullable = false, length = 64)
     private String name;
 
     @Column(name = "description", length = 255)
     private String description;
 
-    @Column(name = "created_at", nullable = false)
-    private Instant createdAt;
+    @ManyToMany
+    @JoinTable(
+        name = "iam_role_permission",
+        joinColumns = @JoinColumn(name = "role_id"),
+        inverseJoinColumns = @JoinColumn(name = "permission_id")
+    )
+    private Set<Permission> permissions = new HashSet<>();
 
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
+    protected Role() {}
 
-    @PrePersist
-    void prePersist() {
-        var now = Instant.now();
-        createdAt = now;
-        updatedAt = now;
+    public static Role create(Tenant tenant, String name, String description) {
+        Role r = new Role();
+        r.id = UUID.randomUUID();
+        r.tenant = tenant;
+        r.name = name;
+        r.description = description;
+        return r;
     }
 
-    @PreUpdate
-    void preUpdate() {
-        updatedAt = Instant.now();
+    public static Role create(Tenant tenant, String name) {
+        return create(tenant, name, null);
     }
 
     public UUID getId() { return id; }
     public Tenant getTenant() { return tenant; }
-    public void setTenant(Tenant tenant) { this.tenant = tenant; }
     public String getName() { return name; }
-    public void setName(String name) { this.name = name; }
     public String getDescription() { return description; }
-    public void setDescription(String description) { this.description = description; }
+    public Set<Permission> getPermissions() { return permissions; }
 }
 

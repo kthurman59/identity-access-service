@@ -4,26 +4,39 @@ import com.kevdev.iam.AbstractIntegrationTest;
 import com.kevdev.iam.domain.Tenant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.annotation.Transactional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@Transactional
 class TenantRepositoryIT extends AbstractIntegrationTest {
 
-    @Autowired TenantRepository tenants;
+    @Autowired
+    TenantRepository tenantRepository;
 
     @Test
-    void uniqueSlugIsEnforced() {
-        Tenant t1 = new Tenant();
-        t1.setSlug("acme");
-        t1.setName("Acme");
-        tenants.saveAndFlush(t1);
+    void savesTenant() {
+        long before = tenantRepository.count();
 
-        Tenant t2 = new Tenant();
-        t2.setSlug("acme");
-        t2.setName("Acme 2");
+        Tenant t = Tenant.create("acme", "Acme");
+        tenantRepository.saveAndFlush(t);
 
-        assertThrows(DataIntegrityViolationException.class, () -> tenants.saveAndFlush(t2));
+        assertThat(tenantRepository.count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void enforcesUniqueSlug() {
+        Tenant t1 = Tenant.create("acme", "Acme One");
+        tenantRepository.saveAndFlush(t1);
+
+        Tenant t2 = Tenant.create("acme", "Acme Two");
+
+        assertThatThrownBy(() -> tenantRepository.saveAndFlush(t2))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }
 

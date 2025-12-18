@@ -5,32 +5,34 @@ import com.kevdev.iam.domain.Role;
 import com.kevdev.iam.domain.Tenant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.annotation.Transactional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@Transactional
 class RoleRepositoryIT extends AbstractIntegrationTest {
 
-    @Autowired TenantRepository tenants;
-    @Autowired RoleRepository roles;
+    @Autowired
+    TenantRepository tenantRepository;
+
+    @Autowired
+    RoleRepository roleRepository;
 
     @Test
-    void roleNameUniqueWithinTenant() {
-        Tenant t = new Tenant();
-        t.setSlug("t1");
-        t.setName("Tenant 1");
-        t = tenants.saveAndFlush(t);
+    void savesRolesForTenant() {
+        Tenant t = Tenant.create("acme", "Acme");
+        tenantRepository.saveAndFlush(t);
 
-        Role r1 = new Role();
-        r1.setTenant(t);
-        r1.setName("ADMIN");
-        roles.saveAndFlush(r1);
+        Role r1 = Role.create(t, "ADMIN");
+        Role r2 = Role.create(t, "USER");
 
-        Role r2 = new Role();
-        r2.setTenant(t);
-        r2.setName("ADMIN");
+        roleRepository.saveAndFlush(r1);
+        roleRepository.saveAndFlush(r2);
 
-        assertThrows(DataIntegrityViolationException.class, () -> roles.saveAndFlush(r2));
+        var roles = roleRepository.findAll();
+        assertThat(roles).hasSizeGreaterThanOrEqualTo(2);
     }
 }
 

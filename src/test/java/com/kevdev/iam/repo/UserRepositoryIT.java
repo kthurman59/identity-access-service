@@ -5,36 +5,48 @@ import com.kevdev.iam.domain.IamUser;
 import com.kevdev.iam.domain.Tenant;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.annotation.Transactional;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@Transactional
 class UserRepositoryIT extends AbstractIntegrationTest {
 
-    @Autowired TenantRepository tenants;
-    @Autowired UserRepository users;
+    @Autowired
+    TenantRepository tenantRepository;
+
+    @Autowired
+    UserRepository userRepository;
 
     @Test
-    void usernameUniqueWithinTenant() {
-        Tenant t = new Tenant();
-        t.setSlug("t1");
-        t.setName("Tenant 1");
-        t = tenants.saveAndFlush(t);
+    void savesUsers() {
+        Tenant t = Tenant.create("acme", "Acme");
+        tenantRepository.saveAndFlush(t);
 
-        IamUser u1 = new IamUser();
-        u1.setTenant(t);
-        u1.setUsername("kevin");
-        u1.setEmail("kevin@t1.com");
-        u1.setPasswordHash("x");
-        users.saveAndFlush(u1);
+        long before = userRepository.count();
 
-        IamUser u2 = new IamUser();
-        u2.setTenant(t);
-        u2.setUsername("kevin");
-        u2.setEmail("kevin2@t1.com");
-        u2.setPasswordHash("x");
+        IamUser u = IamUser.create(t, "kevin", "kevin@example.com", "hash");
+        userRepository.saveAndFlush(u);
 
-        assertThrows(DataIntegrityViolationException.class, () -> users.saveAndFlush(u2));
+        assertThat(userRepository.count()).isEqualTo(before + 1);
+    }
+
+    @Test
+    void enforcesUniqueUsernamePerTenant() {
+        Tenant t = Tenant.create("acme", "Acme");
+        tenantRepository.saveAndFlush(t);
+
+        IamUser u1 = IamUser.create(t, "kevin", "kevin1@example.com", "hash1");
+        userRepository.saveAndFlush(u1);
+
+        IamUser u2 = IamUser.create(t, "kevin", "kevin2@example.com", "hash2");
+
+        assertThatThrownBy(() -> userRepository.saveAndFlush(u2))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }
 
