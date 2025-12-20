@@ -1,0 +1,21 @@
+name: Add items to IAM Auth Backlog
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+jobs:
+  add:
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+      projects: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add to project
+        uses: actions/add-to-project@v1
+        with:
+          project-url: https://github.com/users/kthurman59/projects/10
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
