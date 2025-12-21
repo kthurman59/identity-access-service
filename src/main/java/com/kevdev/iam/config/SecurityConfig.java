@@ -29,11 +29,17 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+
+                .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
+
                 .requestMatchers(HttpMethod.GET, "/secure/ping").authenticated()
                 .requestMatchers(HttpMethod.GET, "/admin/ping").hasAuthority("iam.user.read")
                 .anyRequest().authenticated()
         );
 
+        http.oauth2ResourceServer(oauth2 -> oauth2.jwt());
+
         return http.build();
     }
 }
+
