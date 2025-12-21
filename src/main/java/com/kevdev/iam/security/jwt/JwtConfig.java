@@ -1,4 +1,4 @@
-package com.kevdev.iamauth.infrastructure.security;
+package com.kevdev.iam.security.jwt;
 
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.nimbusds.jose.proc.SecurityContext;

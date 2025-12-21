@@ -1,6 +1,5 @@
-package com.kevdev.iamauth.infrastructure.security;
+package com.kevdev.iam.security.jwt;
 
-import com.kevdev.iamauth.application.ports.security.TokenService;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;

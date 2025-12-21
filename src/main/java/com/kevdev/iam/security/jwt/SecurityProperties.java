@@ -1,4 +1,4 @@
-package com.kevdev.iamauth.infrastructure.security;
+package com.kevdev.iam.security.jwt;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
