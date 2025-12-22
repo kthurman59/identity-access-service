@@ -1,12 +1,14 @@
 name: ci
+
 on:
   push:
-    branches: [ "**" ]
+    branches: ["**"]
+    tags: ["v*"]
   pull_request:
-    branches: [ "**" ]
+    branches: ["**"]
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -21,18 +23,13 @@ jobs:
           cache: maven
 
       - name: Enable Testcontainers reusable mode
-        run: |
-          echo "testcontainers.reuse.enable=true" > ~/.testcontainers.properties
+        run: echo "testcontainers.reuse.enable=true" > ~/.testcontainers.properties
 
       - name: Run tests
         env:
           SPRING_PROFILES_ACTIVE: test
           SECURITY_JWT_SECRET: dev_secret_dev_secret_dev_secret_dev_
         run: ./mvnw -B -DskipITs=false test
-
-      - name: Package app
-        if: github.ref == 'refs/heads/main'
-        run: ./mvnw -B -DskipTests package
 
       - name: Upload reports
         if: always()
@@ -42,4 +39,66 @@ jobs:
           path: |
             target/surefire-reports
             target/site/jacoco
+
+  image:
+    needs: test
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/identity-access-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Temurin 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: maven
+
+      - name: Build jar
+        run: ./mvnw -B -DskipTests package
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image for main
+        if: github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push image for tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.ref_name }}
+            ${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ias-jar
+          path: target/*.jar
 
