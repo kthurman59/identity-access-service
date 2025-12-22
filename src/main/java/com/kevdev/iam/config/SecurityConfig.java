@@ -29,6 +29,7 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                 .requestMatchers("/actuator/health", "/actuator/info").permitAll()
                 .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.POST, "/auth/refresh").permitAll()
 
                 .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
 

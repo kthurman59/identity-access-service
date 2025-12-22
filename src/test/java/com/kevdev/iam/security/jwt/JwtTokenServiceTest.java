@@ -25,7 +25,7 @@ class JwtTokenServiceTest {
         String secretBase64 = Base64.getEncoder().encodeToString(
                 "devsecretdevsecretdevsecretdevsecret".getBytes(StandardCharsets.UTF_8)
         );
-        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900);
+        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900L, 604800L);
 
         byte[] keyBytes = Base64.getDecoder().decode(props.secret());
         SecretKey key = new SecretKeySpec(keyBytes, "HmacSHA256");
@@ -48,7 +48,7 @@ class JwtTokenServiceTest {
         String secretBase64 = Base64.getEncoder().encodeToString(
                 "devsecretdevsecretdevsecretdevsecret".getBytes(StandardCharsets.UTF_8)
         );
-        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900);
+        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900L, 604800L);
 
         byte[] keyBytes = Base64.getDecoder().decode(props.secret());
         SecretKey key = new SecretKeySpec(keyBytes, "HmacSHA256");

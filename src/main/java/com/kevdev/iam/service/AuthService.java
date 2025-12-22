@@ -1,5 +1,6 @@
 package com.kevdev.iam.service;
 
+import com.kevdev.iam.security.jwt.SecurityProperties;
 import com.kevdev.iam.security.jwt.TokenService;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.stereotype.Service;
@@ -11,9 +12,15 @@ import java.util.Map;
 public class AuthService {
 
   private final TokenService tokenService;
+  private final RefreshTokenService refreshTokenService;
+  private final SecurityProperties securityProperties;
 
-  public AuthService(TokenService tokenService) {
+  public AuthService(TokenService tokenService,
+                     RefreshTokenService refreshTokenService,
+                     SecurityProperties securityProperties) {
     this.tokenService = tokenService;
+    this.refreshTokenService = refreshTokenService;
+    this.securityProperties = securityProperties;
   }
 
   public Result login(String username, String password) {
@@ -22,17 +29,23 @@ public class AuthService {
     }
 
     List<String> roles = List.of("ROLE_USER");
-    List<String> permissions = List.of("iam.user.read");
+    Map<String, Object> claims = Map.of("permissions", List.of("iam.user.read"));
 
-    String accessToken = tokenService.issueAccessToken(
-        username,
-        roles,
-        Map.of("permissions", permissions)
-    );
+    String access = tokenService.issueAccessToken(username, roles, claims);
+    String refresh = refreshTokenService.issue(username, securityProperties.refreshTokenTtlSeconds());
 
-    String refreshToken = tokenService.issueRefreshToken();
+    return new Result(access, refresh);
+  }
 
-    return new Result(accessToken, refreshToken);
+  public RefreshResult refresh(String rawRefreshToken) {
+    var rotated = refreshTokenService.rotate(rawRefreshToken, securityProperties.refreshTokenTtlSeconds());
+    String subject = rotated.subject();
+
+    List<String> roles = List.of("ROLE_USER");
+    Map<String, Object> claims = Map.of("permissions", List.of("iam.user.read"));
+
+    String access = tokenService.issueAccessToken(subject, roles, claims);
+    return new RefreshResult(access, rotated.newRefreshToken());
   }
 
   private boolean isValid(String username, String password) {
@@ -40,5 +53,6 @@ public class AuthService {
   }
 
   public record Result(String accessToken, String refreshToken) {}
+  public record RefreshResult(String accessToken, String refreshToken) {}
 }
 
