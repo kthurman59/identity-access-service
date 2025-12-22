@@ -8,24 +8,27 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
+
+import java.time.Instant;
+import java.util.List;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<ApiError> handleValidation(
-            MethodArgumentNotValidException ex,
-            HttpServletRequest request
-    ) {
-        HttpStatus status = HttpStatus.BAD_REQUEST;
-        ApiError apiError = baseError(status, "Validation failed", request);
-
-        ex.getBindingResult().getFieldErrors().forEach(error ->
-                apiError.addFieldError(error.getField(), error.getDefaultMessage())
-        );
-
-        return new ResponseEntity<>(apiError, status);
-    }
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    public org.springframework.http.ResponseEntity<ApiError> handleNoResourceFound(
+      org.springframework.web.servlet.resource.NoResourceFoundException ex,
+      jakarta.servlet.http.HttpServletRequest request
+) {
+      ApiError body = new ApiError(
+          org.springframework.http.HttpStatus.NOT_FOUND.value(),
+          org.springframework.http.HttpStatus.NOT_FOUND.getReasonPhrase(),
+          ex.getMessage(),
+          request.getRequestURI()
+      );
+      return org.springframework.http.ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(body);
+}
 
     @ExceptionHandler(ConstraintViolationException.class)
     public ResponseEntity<ApiError> handleConstraintViolation(

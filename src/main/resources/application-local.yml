@@ -1,0 +1,19 @@
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://localhost:5433/iam
+    username: iam
+    password: iam
+  logging:
+    level:
+      org.springframework.security: DEBUG
+
+security:
+  jwt:
+    issuer: iamauth
+    secret: ${SECURITY_JWT_SECRET:26ipMRXF/oWQeGQlJPQpgqzYevCXGagixaCRMFRsJk/KYs1VPnvCna7uYusWfi1k}
+    accessTokenTtlSeconds: 900
+
+

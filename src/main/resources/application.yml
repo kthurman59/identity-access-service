@@ -15,8 +15,15 @@ spring:
   flyway:
     enabled: true
 
+security:
+  jwt:
+    issuer: iamauth
+    secret: ${SECURITY_JWT_SECRET}
+    accessTokenTtlSeconds: 900
+
 management:
   endpoints:
     web:
       exposure:
         include: [health, info]
+

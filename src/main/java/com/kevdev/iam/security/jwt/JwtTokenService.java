@@ -1,6 +1,5 @@
-package com.kevdev.iamauth.infrastructure.security;
+package com.kevdev.iam.security.jwt;
 
-import com.kevdev.iamauth.application.ports.security.TokenService;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;

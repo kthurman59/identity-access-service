@@ -1,6 +1,5 @@
-package com.kevdev.iamauth.infrastructure.security;
+package com.kevdev.iam.security.jwt;
 
-import com.kevdev.iamauth.application.ports.security.TokenService;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import com.nimbusds.jose.proc.SecurityContext;
 import org.junit.jupiter.api.Test;
@@ -26,7 +25,7 @@ class JwtTokenServiceTest {
         String secretBase64 = Base64.getEncoder().encodeToString(
                 "devsecretdevsecretdevsecretdevsecret".getBytes(StandardCharsets.UTF_8)
         );
-        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900);
+        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900L, 604800L);
 
         byte[] keyBytes = Base64.getDecoder().decode(props.secret());
         SecretKey key = new SecretKeySpec(keyBytes, "HmacSHA256");
@@ -49,7 +48,7 @@ class JwtTokenServiceTest {
         String secretBase64 = Base64.getEncoder().encodeToString(
                 "devsecretdevsecretdevsecretdevsecret".getBytes(StandardCharsets.UTF_8)
         );
-        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900);
+        SecurityProperties props = new SecurityProperties("iamauth", secretBase64, 900L, 604800L);
 
         byte[] keyBytes = Base64.getDecoder().decode(props.secret());
         SecretKey key = new SecretKeySpec(keyBytes, "HmacSHA256");

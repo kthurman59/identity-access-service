@@ -21,3 +21,9 @@ logging:
     org.testcontainers: INFO
     com.zaxxer.hikari: INFO
 
+security:
+  jwt:
+    issuer: iamauth
+    secret: ${SECURITY_JWT_SECRET:test_secret_test_secret_test_secret_test_secret_test_secret}
+    accessTokenTtlSeconds: 900
+
