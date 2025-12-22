@@ -1,5 +1,5 @@
 services:
-  postgres:
+  db:
     image: postgres:16
     environment:
       POSTGRES_DB: iam
@@ -7,9 +7,19 @@ services:
       POSTGRES_PASSWORD: iam
     ports:
       - "5433:5432"
-    volumes:
-      - iam_pgdata:/var/lib/postgresql/data
 
-volumes:
-  iam_pgdata:
+  ias:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SECURITY_JWT_SECRET: dev_secret_dev_secret_dev_secret_dev_
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/iam
+      SPRING_DATASOURCE_USERNAME: iam
+      SPRING_DATASOURCE_PASSWORD: iam
+    ports:
+      - "8082:8082"
+    depends_on:
+      - db
 
