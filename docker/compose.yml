@@ -1,4 +1,7 @@
 services:
+  ias:
+    image: ghcr.io/kthurman59/identity-access-service:probe
+    pull_policy: always
   postgres:
     image: postgres:16
     environment:
