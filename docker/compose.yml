@@ -1,9 +1,8 @@
+name: ias
+
 services:
-  ias:
-    image: ghcr.io/kthurman59/identity-access-service:probe
-    pull_policy: always
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     environment:
       POSTGRES_DB: iam
       POSTGRES_USER: iam
@@ -12,6 +11,32 @@ services:
       - "5433:5432"
     volumes:
       - iam_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iam -d iam"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  ias:
+    image: ghcr.io/kthurman59/identity-access-service:v0.1.0
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: DEBUG
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/iam
+      SPRING_DATASOURCE_USERNAME: iam
+      SPRING_DATASOURCE_PASSWORD: iam
+      SECURITY_JWT_SECRET: dev_secret_dev_secret_dev_secret_dev_
+      SECURITY_JWT_ISSUER: iamauth
+      SERVER_PORT: "8082"
+    ports:
+      - "8082:8082"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8082/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
 
 volumes:
   iam_pgdata:
