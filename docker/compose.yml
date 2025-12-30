@@ -18,15 +18,23 @@ services:
       retries: 20
 
   ias:
-    image: ghcr.io/kthurman59/identity-access-service:v0.1.0
+    container_name: ias-1
+    build:
+      context: ..
+      dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
     environment:
-      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: DEBUG
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_SECURITY_DEBUG: "true"
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: TRACE
+      LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB: DEBUG
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/iam
       SPRING_DATASOURCE_USERNAME: iam
       SPRING_DATASOURCE_PASSWORD: iam
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,mappings
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
       SECURITY_JWT_SECRET: dev_secret_dev_secret_dev_secret_dev_
       SECURITY_JWT_ISSUER: iamauth
       SERVER_PORT: "8082"

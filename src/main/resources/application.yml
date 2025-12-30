@@ -2,21 +2,21 @@ server:
   port: 8082
 
 spring:
-  application:
-    name: identity-access-service
   datasource:
-    url: jdbc:postgresql://localhost:5433/iam
-    username: iam
-    password: iam
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
   jpa:
     hibernate:
       ddl-auto: validate
-    open-in-view: false
-  flyway:
-    enabled: true
 
 management:
   endpoints:
     web:
       exposure:
-        include: [health, info]
+        include: health,info
+
+security:
+  jwt:
+    secret: ${SECURITY_JWT_SECRET}
+
