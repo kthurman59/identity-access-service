@@ -19,3 +19,5 @@ logs/
 application-local.yml
 target/
 docker/app.jar
+target/
+docker/app.jar
