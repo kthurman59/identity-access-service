@@ -21,3 +21,5 @@ target/
 docker/app.jar
 target/
 docker/app.jar
+target/
+docker/*.jar
