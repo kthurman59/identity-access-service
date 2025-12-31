@@ -9,14 +9,29 @@ spring:
   jpa:
     hibernate:
       ddl-auto: validate
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    validate-on-migrate: true
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info
-
+        include: health,info,mappings,flyway
+  endpoint:
+    flyway:
+      enabled: true
 security:
   jwt:
     secret: ${SECURITY_JWT_SECRET}
 
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,mappings,flyway
+  endpoint:
+    flyway:
+      enabled: true
