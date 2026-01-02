@@ -1,6 +1,6 @@
-package com.kevdev.iamauth.api.error;
+package com.kevdev.iam.api.error;
 
-import com.kevdev.iamauth.infrastructure.web.RequestIdFilter;
+import com.kevdev.iam.infrastructure.web.RequestIdFilter;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import org.slf4j.MDC;

@@ -1,4 +1,4 @@
-package com.kevdev.iamauth.api.error;
+package com.kevdev.iam.api.error;
 
 import java.time.Instant;
 

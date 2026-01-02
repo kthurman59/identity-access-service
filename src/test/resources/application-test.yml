@@ -1,23 +1,23 @@
+server:
+  port: 0
+
 spring:
   datasource:
     url: jdbc:tc:postgresql:16:///iam
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
-    username: iam
-    password: iam
-
   jpa:
     hibernate:
-      ddl-auto: validate
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
-
+      ddl-auto: none
   flyway:
     enabled: true
     locations: classpath:db/migration
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-empty-json-arrays: true
 
-logging:
-  level:
-    org.testcontainers: INFO
-    com.zaxxer.hikari: INFO
-
+security:
+  jwt:
+    issuer: test-issuer
+    secret: 0123456789ABCDEF0123456789ABCDEF
+    access-token-ttl-seconds: 300

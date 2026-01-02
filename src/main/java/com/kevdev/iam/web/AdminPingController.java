@@ -5,8 +5,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-class PingController {
-  @PreAuthorize("hasAnyRole('USER','ADMIN')")
-  @GetMapping("/secure/ping")
-  String securePing() { return "secure ok"; }
+class AdminPingController {
+  @PreAuthorize("hasRole('ADMIN')")
+  @GetMapping("/admin/ping")
+  String ping() { return "admin ok"; }
 }
