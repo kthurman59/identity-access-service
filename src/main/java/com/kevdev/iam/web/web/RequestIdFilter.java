@@ -1,4 +1,4 @@
-package com.kevdev.iamauth.infrastructure.web;
+package com.kevdev.iam.infrastructure.web;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
