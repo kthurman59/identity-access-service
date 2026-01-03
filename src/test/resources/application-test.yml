@@ -3,21 +3,28 @@ server:
 
 spring:
   datasource:
-    url: jdbc:tc:postgresql:16:///iam
+    url: jdbc:tc:postgresql:16:///ias?TC_DAEMON=true
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
   jpa:
     hibernate:
       ddl-auto: none
+    properties:
+      hibernate.jdbc.time_zone: UTC
   flyway:
     enabled: true
     locations: classpath:db/migration
-  jackson:
-    default-property-inclusion: non_null
-    serialization:
-      write-empty-json-arrays: true
+  autoconfigure:
+    exclude: org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
 
+# keep both to match either AuthBeans style
 security:
   jwt:
+    secret: test-test-test-test-test-test-test-test
+
+ias:
+  jwt:
     issuer: test-issuer
-    secret: 0123456789ABCDEF0123456789ABCDEF
-    access-token-ttl-seconds: 300
+    secret:
+      b64: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=
+    access-ttl-minutes: 5
+

@@ -1,9 +1,7 @@
 package com.kevdev.iam.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.env.Environment;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
@@ -21,43 +19,26 @@ import java.util.Map;
 @Service
 public class JwtTokenService {
 
-    private static final String TEST_SECRET_B64 = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=";
-
     private final ObjectMapper objectMapper;
     private final byte[] secret;
     private final String issuer;
     private final Duration accessTtl;
 
-    @Autowired
     public JwtTokenService(
-        ObjectMapper objectMapper,
-        Environment environment,
-        @Value("${IAS_JWT_SECRET_B64:}") String secretB64,
-        @Value("${IAS_JWT_ISSUER:ias}") String issuer,
-        @Value("${IAS_JWT_ACCESS_TTL_MINUTES:15}") long accessTtlMinutes
+            ObjectMapper objectMapper,
+            @Value("${ias.jwt.secret.b64}") String secretB64,
+            @Value("${ias.jwt.issuer:ias}") String issuer,
+            @Value("${ias.jwt.access-ttl-minutes:15}") long accessTtlMinutes
     ) {
         this.objectMapper = objectMapper;
-        this.issuer = issuer;
-        this.accessTtl = Duration.ofMinutes(accessTtlMinutes);
-
-        String resolved = secretB64 == null ? "" : secretB64.trim();
-        if (resolved.isEmpty()) {
-            if (environment != null && environment.acceptsProfiles("test")) {
-                resolved = TEST_SECRET_B64;
-            } else {
-                throw new IllegalStateException("IAS_JWT_SECRET_B64 is required");
-            }
+        if (secretB64 == null || secretB64.isBlank()) {
+            throw new IllegalStateException("ias.jwt.secret.b64 is required");
         }
-
-        this.secret = Base64.getDecoder().decode(resolved);
-        if (this.secret.length < 32) {
-            throw new IllegalStateException("IAS_JWT_SECRET_B64 must decode to at least 32 bytes");
+        byte[] key = Base64.getDecoder().decode(secretB64.trim());
+        if (key.length < 32) {
+            throw new IllegalStateException("ias.jwt.secret.b64 must decode to at least 32 bytes");
         }
-    }
-
-    public JwtTokenService(ObjectMapper objectMapper, String secretB64, String issuer, long accessTtlMinutes) {
-        this.objectMapper = objectMapper;
-        this.secret = Base64.getDecoder().decode(secretB64);
+        this.secret = key;
         this.issuer = issuer;
         this.accessTtl = Duration.ofMinutes(accessTtlMinutes);
     }
@@ -67,9 +48,9 @@ public class JwtTokenService {
         long exp = iat + accessTtl.toSeconds();
 
         List<String> roles = user.getAuthorities().stream()
-            .map(GrantedAuthority::getAuthority)
-            .map(a -> a.startsWith("ROLE_") ? a.substring("ROLE_".length()) : a)
-            .toList();
+                .map(GrantedAuthority::getAuthority)
+                .map(a -> a.startsWith("ROLE_") ? a.substring(5) : a)
+                .toList();
 
         Map<String, Object> header = Map.of("alg", "HS256", "typ", "JWT");
 
@@ -90,32 +71,22 @@ public class JwtTokenService {
 
     public Map<String, Object> parseAndVerify(String jwt) {
         String[] parts = jwt.split("\\.");
-        if (parts.length != 3) {
-            throw new IllegalArgumentException("invalid_jwt");
-        }
+        if (parts.length != 3) throw new IllegalArgumentException("invalid_jwt");
 
         String signingInput = parts[0] + "." + parts[1];
         byte[] expected = hmacSha256(signingInput);
         byte[] actual = Base64.getUrlDecoder().decode(parts[2]);
-
-        if (!constantTimeEquals(expected, actual)) {
-            throw new IllegalArgumentException("invalid_signature");
-        }
+        if (!constantTimeEquals(expected, actual)) throw new IllegalArgumentException("invalid_signature");
 
         byte[] payloadBytes = Base64.getUrlDecoder().decode(parts[1]);
         Map<String, Object> payload = readMap(payloadBytes);
 
         Object iss = payload.get("iss");
-        if (iss == null || !issuer.equals(iss.toString())) {
-            throw new IllegalArgumentException("invalid_issuer");
-        }
+        if (iss == null || !issuer.equals(iss.toString())) throw new IllegalArgumentException("invalid_issuer");
 
         Object expObj = payload.get("exp");
         long exp = expObj instanceof Number ? ((Number) expObj).longValue() : Long.parseLong(expObj.toString());
-        long now = Instant.now().getEpochSecond();
-        if (now >= exp) {
-            throw new IllegalArgumentException("token_expired");
-        }
+        if (Instant.now().getEpochSecond() >= exp) throw new IllegalArgumentException("token_expired");
 
         return payload;
     }
@@ -128,11 +99,10 @@ public class JwtTokenService {
         }
     }
 
+    @SuppressWarnings("unchecked")
     private Map<String, Object> readMap(byte[] json) {
         try {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> m = objectMapper.readValue(json, Map.class);
-            return m;
+            return objectMapper.readValue(json, Map.class);
         } catch (Exception e) {
             throw new IllegalStateException("json_failed", e);
         }
@@ -142,11 +112,11 @@ public class JwtTokenService {
         return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
-    private byte[] hmacSha256(String signingInput) {
+    private byte[] hmacSha256(String input) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret, "HmacSHA256"));
-            return mac.doFinal(signingInput.getBytes(StandardCharsets.UTF_8));
+            return mac.doFinal(input.getBytes(StandardCharsets.UTF_8));
         } catch (Exception e) {
             throw new IllegalStateException("hmac_failed", e);
         }
@@ -155,9 +125,7 @@ public class JwtTokenService {
     private boolean constantTimeEquals(byte[] a, byte[] b) {
         if (a.length != b.length) return false;
         int r = 0;
-        for (int i = 0; i < a.length; i++) {
-            r |= a[i] ^ b[i];
-        }
+        for (int i = 0; i < a.length; i++) r |= a[i] ^ b[i];
         return r == 0;
     }
 }
