@@ -1,11 +1,9 @@
 package com.kevdev.iam.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.kevdev.iam.security.RestAccessDeniedHandler;
-import com.kevdev.iam.security.RestAuthenticationEntryPoint;
+import com.kevdev.iam.security.SecurityErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -16,42 +14,30 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableMethodSecurity
 public class SecurityConfig {
 
-    @Bean
-    public RestAuthenticationEntryPoint restAuthenticationEntryPoint() {
-        return new RestAuthenticationEntryPoint();
-    }
+  private final SecurityErrorHandler errorHandler;
 
-    @Bean
-    public RestAccessDeniedHandler restAccessDeniedHandler() {
-        return new RestAccessDeniedHandler();
-    }
+  public SecurityConfig(SecurityErrorHandler errorHandler) {
+    this.errorHandler = errorHandler;
+  }
 
-    @Bean
-    public SecurityFilterChain securityFilterChain(
-        HttpSecurity http,
-        RestAuthenticationEntryPoint restAuthenticationEntryPoint,
-        RestAccessDeniedHandler restAccessDeniedHandler
-    ) throws Exception {
+  @Bean
+  SecurityFilterChain securityFilterChain(HttpSecurity http,
+                                          AuthenticationManager authenticationManager) throws Exception {
+    http
+        .csrf(csrf -> csrf.disable())
+        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .authorizeHttpRequests(auth -> auth
+            .requestMatchers("/actuator/**", "/auth/login", "/auth/refresh", "/error").permitAll()
+            .requestMatchers("/admin/**").hasRole("ADMIN")
+            .requestMatchers("/secure/**").authenticated()
+            .anyRequest().permitAll()
+        )
+        .exceptionHandling(h -> h
+            .authenticationEntryPoint(errorHandler)
+            .accessDeniedHandler(errorHandler))
+        .httpBasic(Customizer.withDefaults());
 
-        return http
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(eh -> eh
-                .authenticationEntryPoint(restAuthenticationEntryPoint)
-                .accessDeniedHandler(restAccessDeniedHandler)
-            )
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/actuator/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/login").permitAll()
-                .requestMatchers(HttpMethod.POST, "/auth/refresh").permitAll()
-                .anyRequest().authenticated()
-            )
-            .oauth2ResourceServer(oauth2 -> oauth2
-                .jwt(Customizer.withDefaults())
-                .authenticationEntryPoint(restAuthenticationEntryPoint)
-                .accessDeniedHandler(restAccessDeniedHandler)
-            )
-            .build();
-    }
+    return http.build();
+  }
 }
 
