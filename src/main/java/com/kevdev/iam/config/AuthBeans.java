@@ -2,9 +2,8 @@ package com.kevdev.iam.config;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
-import java.util.Base64;
-import java.util.HashMap;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,17 +12,15 @@ import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.DelegatingPasswordEncoder;
 
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
-
-import com.kevdev.iam.security.SecurityUserDetailsService;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.jwk.JWKSet;
@@ -37,17 +34,13 @@ public class AuthBeans {
 
   @Bean
   PasswordEncoder passwordEncoder() {
-    var bcrypt = new BCryptPasswordEncoder();
-    var map = new HashMap<String, PasswordEncoder>();
-    map.put("bcrypt", bcrypt);
-    var del = new DelegatingPasswordEncoder("bcrypt", map);
-    del.setDefaultPasswordEncoderForMatches(bcrypt);
-    return del;
+    return PasswordEncoderFactories.createDelegatingPasswordEncoder();
   }
 
   @Bean
-  DaoAuthenticationProvider daoAuthenticationProvider(SecurityUserDetailsService uds,
-                                                     PasswordEncoder encoder) {
+  DaoAuthenticationProvider daoAuthenticationProvider(
+      @Qualifier("securityUserDetailsServiceJdbc") UserDetailsService uds,
+      PasswordEncoder encoder) {
     var p = new DaoAuthenticationProvider();
     p.setUserDetailsService(uds);
     p.setPasswordEncoder(encoder);
@@ -60,9 +53,8 @@ public class AuthBeans {
   }
 
   @Bean
-  SecretKeySpec jwtSecretKey(@Value("${ias.jwt.secret.b64}") String secretB64) {
-    byte[] key = Base64.getDecoder().decode(secretB64);
-    return new SecretKeySpec(key, "HmacSHA256");
+  SecretKeySpec jwtSecretKey(@Value("${security.jwt.secret}") String secret) {
+    return new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
   }
 
   @Bean

@@ -1,42 +1,37 @@
 package com.kevdev.iam.config;
 
-import com.kevdev.iam.security.SecurityErrorHandler;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.config.Customizer;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
 @EnableMethodSecurity
 public class SecurityConfig {
 
-  private final SecurityErrorHandler errorHandler;
-
-  public SecurityConfig(SecurityErrorHandler errorHandler) {
-    this.errorHandler = errorHandler;
+  @Bean
+  JwtAuthenticationConverter jwtAuthConverter() {
+    JwtGrantedAuthoritiesConverter c = new JwtGrantedAuthoritiesConverter();
+    c.setAuthoritiesClaimName("roles");
+    c.setAuthorityPrefix("ROLE_");
+    JwtAuthenticationConverter conv = new JwtAuthenticationConverter();
+    conv.setJwtGrantedAuthoritiesConverter(c);
+    return conv;
   }
 
   @Bean
-  SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                          AuthenticationManager authenticationManager) throws Exception {
-    http
-        .csrf(csrf -> csrf.disable())
-        .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-        .authorizeHttpRequests(auth -> auth
-            .requestMatchers("/actuator/**", "/auth/login", "/auth/refresh", "/error").permitAll()
-            .requestMatchers("/admin/**").hasRole("ADMIN")
-            .requestMatchers("/secure/**").authenticated()
-            .anyRequest().permitAll()
-        )
-        .exceptionHandling(h -> h
-            .authenticationEntryPoint(errorHandler)
-            .accessDeniedHandler(errorHandler))
-        .httpBasic(Customizer.withDefaults());
-
+  SecurityFilterChain security(HttpSecurity http, JwtAuthenticationConverter jwtConv) throws Exception {
+    http.csrf(csrf -> csrf.disable());
+    http.authorizeHttpRequests(auth -> auth
+        .requestMatchers(HttpMethod.POST, "/auth/login", "/auth/refresh").permitAll()
+        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+        .anyRequest().authenticated()
+    );
+    http.oauth2ResourceServer(o -> o.jwt(j -> j.jwtAuthenticationConverter(jwtConv)));
     return http.build();
   }
 }
