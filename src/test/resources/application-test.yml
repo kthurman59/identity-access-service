@@ -3,8 +3,11 @@ server:
 
 spring:
   datasource:
-    url: jdbc:tc:postgresql:16:///ias?TC_TMPFS=/var/lib/postgresql/data:rw
+    url: jdbc:tc:postgresql:16:///ias?TC_DAEMON=true
     driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
+  test:
+    database:
+      replace: none
   jpa:
     open-in-view: false
     hibernate:
@@ -13,27 +16,23 @@ spring:
       hibernate.jdbc.time_zone: UTC
   flyway:
     enabled: true
-    baseline-on-migrate: true
     locations: classpath:db/migration
   task:
     scheduling:
       enabled: false
 
-security:
-  jwt:
-    secret: testsecretfortests
-
 ias:
   tenant:
     header-name: X-Tenant-Key
-    default-key: dev
+    default-key: test
   jwt:
     issuer: ias-test
     secret:
-      b64: dGVzdF9qd3Rfc2VjcmV0XzMyX2J5dGVzX2Jhc2U2NA==
-    access-ttl-minutes: 5
-  tasks:
-    scheduling-enabled: false
+      b64: MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=
+    access:
+      ttl: 5m
+    refresh:
+      ttl: 30d
 
 logging:
   level:

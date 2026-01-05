@@ -1,16 +1,14 @@
--- fill subject from username when missing
-create or replace function rt_subject_default() returns trigger
-language plpgsql as $$
+create or replace function set_refresh_subject() returns trigger as $$
 begin
-  if new.subject is null or length(new.subject) = 0 then
-    new.subject := coalesce(new.username, new.token_hash);
+  if NEW.subject is null or NEW.subject = '' then
+    NEW.subject := NEW.username;
   end if;
-  return new;
-end $$;
+  return NEW;
+end;
+$$ language plpgsql;
 
-drop trigger if exists trg_rt_subject_default on refresh_token;
+drop trigger if exists trg_set_refresh_subject on refresh_token;
 
-create trigger trg_rt_subject_default
-before insert or update on refresh_token
-for each row execute function rt_subject_default();
-
+create trigger trg_set_refresh_subject
+before insert on refresh_token
+for each row execute function set_refresh_subject();
