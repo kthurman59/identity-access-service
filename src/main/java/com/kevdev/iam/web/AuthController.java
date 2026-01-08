@@ -1,98 +1,145 @@
 package com.kevdev.iam.web;
 
+import com.kevdev.iam.security.JwtTokenService;
+import com.kevdev.iam.security.RefreshTokenService;
 import jakarta.validation.Valid;
-import org.springframework.beans.factory.annotation.Value;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.oauth2.jwt.JwtClaimsSet;
-import org.springframework.security.oauth2.jwt.JwtEncoder;
-import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
-import org.springframework.web.bind.annotation.*;
-
-import java.time.Instant;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 public class AuthController {
 
   private final AuthenticationManager authManager;
-  private final JwtEncoder jwtEncoder;
-  private final com.kevdev.iam.security.RefreshTokenService refreshTokenService;
+  private final JwtTokenService jwtTokenService;
+  private final RefreshTokenService refreshTokenService;
+  private final JdbcTemplate jdbc;
 
-  @Value("${ias.jwt.issuer:ias-dev}")
-  private String issuer;
-
-  public AuthController(AuthenticationManager authManager,
-                        JwtEncoder jwtEncoder,
-                        com.kevdev.iam.security.RefreshTokenService refreshTokenService) {
+  public AuthController(
+      AuthenticationManager authManager,
+      JwtTokenService jwtTokenService,
+      RefreshTokenService refreshTokenService,
+      JdbcTemplate jdbc
+  ) {
     this.authManager = authManager;
-    this.jwtEncoder = jwtEncoder;
+    this.jwtTokenService = jwtTokenService;
     this.refreshTokenService = refreshTokenService;
+    this.jdbc = jdbc;
   }
 
   public record LoginRequest(String username, String password) {}
   public record TokenResponse(String accessToken, String refreshToken) {}
 
   @PostMapping("/auth/login")
-  public ResponseEntity<TokenResponse> login(@RequestHeader("X-Tenant-Key") String tenantKey,
-                                             @Valid @RequestBody LoginRequest req) {
+  public ResponseEntity<TokenResponse> login(
+      @RequestHeader("X-Tenant-Key") String tenantKey,
+      @Valid @RequestBody LoginRequest req
+  ) {
     Authentication auth = authManager.authenticate(
         new UsernamePasswordAuthenticationToken(req.username(), req.password()));
 
     List<String> roles = auth.getAuthorities().stream()
         .map(GrantedAuthority::getAuthority)
         .map(a -> a.startsWith("ROLE_") ? a.substring(5) : a)
+        .map(r -> r.toUpperCase(Locale.ROOT))
+        .distinct()
         .toList();
 
-    Instant now = Instant.now();
-    Instant exp = now.plusSeconds(60L * 60L);
+    String access = jwtTokenService.issueAccessToken(
+        req.username(),
+        roles,
+        Map.of(
+            "username", req.username(),
+            "tenant", tenantKey
+        )
+    );
 
-    JwtClaimsSet claims = JwtClaimsSet.builder()
-        .issuer(issuer)
-        .issuedAt(now)
-        .expiresAt(exp)
-        .subject(req.username())
-        .claim("username", req.username())
-        .claim("tenant", tenantKey)
-        .claim("roles", roles)
-        .build();
-
-    String access = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
-
-    UUID pseudoUserId = UUID.nameUUIDFromBytes((tenantKey + ":" + req.username()).getBytes());
-    String refresh = refreshTokenService.mintOnLogin(pseudoUserId, req.username());
+    UUID userId = lookupUserId(tenantKey, req.username());
+    String refresh = refreshTokenService.mintOnLogin(userId, req.username());
 
     return ResponseEntity.ok(new TokenResponse(access, refresh));
   }
 
   @PostMapping("/auth/refresh")
-  public ResponseEntity<TokenResponse> refresh(@RequestHeader("X-Tenant-Key") String tenantKey,
-                                               @RequestBody Map<String, String> body) {
-    String presented = body.getOrDefault("refreshToken", "");
-    UUID pseudoUserId = UUID.nameUUIDFromBytes(("u:" + presented).getBytes());
-    com.kevdev.iam.security.RefreshTokenService.TokenPair pair =
-        refreshTokenService.rotate(pseudoUserId, presented);
+  public ResponseEntity<TokenResponse> refresh(
+      @RequestHeader("X-Tenant-Key") String tenantKey,
+      @RequestBody Map<String, String> body
+  ) {
+    String presented = body.getOrDefault("refreshToken", "").trim();
+    String username = body.getOrDefault("username", "").trim();
 
-    Instant now = Instant.now();
-    Instant exp = now.plusSeconds(60L * 60L);
+    if (presented.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "refreshToken is required");
+    }
+    if (username.isBlank()) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "username is required");
+    }
 
-    JwtClaimsSet claims = JwtClaimsSet.builder()
-        .issuer(issuer)
-        .issuedAt(now)
-        .expiresAt(exp)
-        .subject(pair.username())
-        .claim("username", pair.username())
-        .claim("tenant", tenantKey)
-        .claim("roles", List.of("ADMIN"))
-        .build();
+    UUID userId = lookupUserId(tenantKey, username);
 
-    String access = jwtEncoder.encode(JwtEncoderParameters.from(claims)).getTokenValue();
+    RefreshTokenService.TokenPair pair = refreshTokenService.rotate(userId, presented);
+
+    List<String> roles = lookupRoles(tenantKey, pair.username());
+
+    String access = jwtTokenService.issueAccessToken(
+        pair.username(),
+        roles,
+        Map.of(
+            "username", pair.username(),
+            "tenant", tenantKey
+        )
+    );
+
     return ResponseEntity.ok(new TokenResponse(access, pair.refreshToken()));
+  }
+
+  private UUID lookupUserId(String tenantKey, String username) {
+    try {
+      return jdbc.queryForObject(
+          """
+          select u.id
+          from iam_user u
+          join iam_tenant t on t.id = u.tenant_id
+          where t.tenant_key = ?
+            and u.username = ?
+          """,
+          (rs, n) -> rs.getObject(1, UUID.class),
+          tenantKey,
+          username
+      );
+    } catch (Exception e) {
+      throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unknown user or tenant");
+    }
+  }
+
+  private List<String> lookupRoles(String tenantKey, String username) {
+    return jdbc.query(
+        """
+        select r.name
+        from iam_role r
+        join iam_user_role ur on ur.role_id = r.id
+        join iam_tenant t on t.id = ur.tenant_id
+        where t.tenant_key = ?
+          and ur.username = ?
+        order by r.name
+        """,
+        (rs, n) -> rs.getString(1).toUpperCase(Locale.ROOT),
+        tenantKey,
+        username
+    );
   }
 }
 

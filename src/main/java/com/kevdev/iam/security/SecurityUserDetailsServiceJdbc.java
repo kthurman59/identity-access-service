@@ -46,6 +46,7 @@ public class SecurityUserDetailsServiceJdbc implements UserDetailsService {
                  end
         limit 1
         """;
+
     String col = jdbc.query(sql, rs -> rs.next() ? rs.getString(1) : null);
     if (col == null) {
       throw new IllegalStateException("No password column on iam_user");
@@ -56,16 +57,18 @@ public class SecurityUserDetailsServiceJdbc implements UserDetailsService {
   @Override
   public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
     try {
-      var u = jdbc.queryForObject(
-          "select id, username, enabled, " + pwdColumn + " as pwd from iam_user where username = ?",
+      UserRow u = jdbc.queryForObject(
+          "select id, tenant_id, username, enabled, " + pwdColumn + " as pwd from iam_user where username = ?",
           new Object[] { username },
           new RowMapper<UserRow>() {
             @Override
             public UserRow mapRow(ResultSet rs, int rowNum) throws SQLException {
-              return new UserRow(rs.getObject("id"),
-                                 rs.getString("username"),
-                                 rs.getBoolean("enabled"),
-                                 rs.getString("pwd"));
+              return new UserRow(
+                  rs.getObject("id"),
+                  rs.getObject("tenant_id"),
+                  rs.getString("username"),
+                  rs.getBoolean("enabled"),
+                  rs.getString("pwd"));
             }
           });
 
@@ -78,9 +81,13 @@ public class SecurityUserDetailsServiceJdbc implements UserDetailsService {
           select r.name
           from iam_role r
           join iam_user_role ur on ur.role_id = r.id
-          where ur.user_id = ?
+          where ur.tenant_id = ?
+            and ur.username = ?
           """,
-          ps -> ps.setObject(1, u.id),
+          ps -> {
+            ps.setObject(1, u.tenantId);
+            ps.setString(2, u.username);
+          },
           (rs, n) -> new SimpleGrantedAuthority("ROLE_" + rs.getString(1).toUpperCase(Locale.ROOT)));
 
       return User.withUsername(u.username)
@@ -94,6 +101,6 @@ public class SecurityUserDetailsServiceJdbc implements UserDetailsService {
     }
   }
 
-  private record UserRow(Object id, String username, boolean enabled, String password) {}
+  private record UserRow(Object id, Object tenantId, String username, boolean enabled, String password) {}
 }
 

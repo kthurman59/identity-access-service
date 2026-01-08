@@ -1,25 +1,22 @@
-create table iam_permission (
+create table if not exists iam_permission (
   id uuid primary key default gen_random_uuid(),
-  code varchar(64) not null,
+  tenant_id uuid not null references iam_tenant(id) on delete cascade,
+  code varchar(120) not null,
   description varchar(255),
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  constraint uq_iam_permission_code unique (code)
+  constraint uk_iam_permission_tenant_code unique (tenant_id, code)
 );
 
-create table iam_role_permission (
-  role_id uuid not null,
-  permission_id uuid not null,
+create index if not exists ix_iam_permission_tenant_code on iam_permission(tenant_id, code);
+
+create table if not exists iam_role_permission (
+  tenant_id uuid not null references iam_tenant(id) on delete cascade,
+  role_id uuid not null references iam_role(id) on delete cascade,
+  permission_id uuid not null references iam_permission(id) on delete cascade,
   created_at timestamptz not null default now(),
-  constraint pk_iam_role_permission primary key (role_id, permission_id),
-  constraint fk_iam_role_permission_role foreign key (role_id) references iam_role(id) on delete cascade,
-  constraint fk_iam_role_permission_permission foreign key (permission_id) references iam_permission(id) on delete cascade
+  constraint pk_iam_role_permission primary key (tenant_id, role_id, permission_id)
 );
 
-create index idx_iam_role_permission_permission_id on iam_role_permission(permission_id);
-
-create trigger trg_iam_permission_set_updated_at
-before update on iam_permission
-for each row
-execute function iam_set_updated_at();
+create index if not exists ix_iam_role_permission_role on iam_role_permission(role_id);
+create index if not exists ix_iam_role_permission_perm on iam_role_permission(permission_id);
 

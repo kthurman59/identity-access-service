@@ -5,9 +5,9 @@ server:
 
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5433/ias
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://localhost:5433/iam
+    username: iam
+    password: iam
   jpa:
     open-in-view: false
     hibernate:
@@ -38,10 +38,10 @@ logging:
 ias:
   tenant:
     header-name: X-Tenant-Key
-    default-key: demo
+    default-key: dev
   jwt:
     issuer: ias-dev
     secret:
-      b64: ${IAS_JWT_SECRET_B64:}
+      b64: ${IAS_JWT_SECRET_B64:AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=}
     access-ttl-minutes: 60
 

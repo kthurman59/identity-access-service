@@ -18,33 +18,37 @@ services:
       retries: 20
 
   ias:
-    container_name: ias-1
     build:
       context: ..
       dockerfile: Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
+
+    env_file:
+      - .env
+
     environment:
       SPRING_PROFILES_ACTIVE: docker
       SPRING_SECURITY_DEBUG: "true"
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_SECURITY: TRACE
       LOGGING_LEVEL_ORG_SPRINGFRAMEWORK_WEB: DEBUG
+      LOGGING_LEVEL_COM_KEVDEV: DEBUG
+
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/iam
       SPRING_DATASOURCE_USERNAME: iam
       SPRING_DATASOURCE_PASSWORD: iam
+
+      IAS_TENANT_DEFAULT_KEY: dev
+      IAS_TENANT_HEADER_NAME: X-Tenant-Key
+      IAS_JWT_ISSUER: iamauth
+
       MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,mappings
       MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
-      SECURITY_JWT_SECRET: dev_secret_dev_secret_dev_secret_dev_
-      SECURITY_JWT_ISSUER: iamauth
+
       SERVER_PORT: "8082"
     ports:
       - "8082:8082"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8082/actuator/health"]
-      interval: 5s
-      timeout: 3s
-      retries: 30
 
 volumes:
   iam_pgdata:
