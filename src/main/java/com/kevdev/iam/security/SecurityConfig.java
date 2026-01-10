@@ -3,38 +3,50 @@ package com.kevdev.iam.security;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.Customizer;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
-    private final SecurityErrorHandler securityErrorHandler;
+  @Bean
+  SecurityFilterChain securityFilterChain(
+      HttpSecurity http,
+      TenantKeyFilter tenantKeyFilter,
+      RestAuthenticationEntryPoint authenticationEntryPoint,
+      RestAccessDeniedHandler accessDeniedHandler
+  ) throws Exception {
 
-    public SecurityConfig(SecurityErrorHandler securityErrorHandler) {
-        this.securityErrorHandler = securityErrorHandler;
-    }
+    http.csrf(csrf -> csrf.disable());
 
-    @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
-        http
-            .csrf(csrf -> csrf.disable())
-            .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-            .exceptionHandling(eh -> eh
-                .authenticationEntryPoint(securityErrorHandler)
-                .accessDeniedHandler(securityErrorHandler)
-            )
-            .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**").permitAll()
-                .requestMatchers("/actuator/health", "/actuator/info").permitAll()
-                .anyRequest().authenticated()
-            )
-            .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
+    http.sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
 
-        return http.build();
-    }
+    http.exceptionHandling(ex -> ex
+        .authenticationEntryPoint(authenticationEntryPoint)
+        .accessDeniedHandler(accessDeniedHandler)
+    );
+
+    http.authorizeHttpRequests(auth -> auth
+        .requestMatchers("/auth/login", "/auth/refresh").permitAll()
+        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+        .requestMatchers("/ping").permitAll()
+        .requestMatchers("/admin/ping").hasAuthority("ADMIN")
+        .anyRequest().authenticated()
+    );
+
+    http.oauth2ResourceServer(oauth2 -> oauth2.jwt(Customizer.withDefaults()));
+
+    http.addFilterBefore(tenantKeyFilter, BearerTokenAuthenticationFilter.class);
+    http.addFilterBefore(tenantKeyFilter, UsernamePasswordAuthenticationFilter.class);
+
+    return http.build();
+  }
 }
 
