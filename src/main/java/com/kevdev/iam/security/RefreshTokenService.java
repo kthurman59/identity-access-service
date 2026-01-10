@@ -1,97 +1,254 @@
 package com.kevdev.iam.security;
 
-import com.kevdev.iam.domain.RefreshToken;
-import com.kevdev.iam.repo.RefreshTokenRepository;
-import jakarta.transaction.Transactional;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.sql.PreparedStatement;
+import java.sql.Timestamp;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.List;
 import java.util.UUID;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class RefreshTokenService {
 
-  public static record TokenPair(String refreshToken, String username) {}
+  private static final Base64.Encoder B64_URL = Base64.getUrlEncoder().withoutPadding();
 
-  private final RefreshTokenRepository repo;
+  private final JdbcTemplate jdbc;
+  private final Clock clock;
+  private final SecureRandom rng = new SecureRandom();
+  private final Duration refreshTtl;
 
-  public RefreshTokenService(RefreshTokenRepository repo) {
-    this.repo = repo;
+  public RefreshTokenService(
+      JdbcTemplate jdbc,
+      Clock clock,
+      @Value("${ias.refresh.ttl:P14D}") String refreshTtl
+  ) {
+    this.jdbc = jdbc;
+    this.clock = clock;
+    this.refreshTtl = Duration.parse(refreshTtl);
   }
 
-  // returns the opaque refresh token string
+  public record TokenPair(String username, List<String> roles, String refreshToken) {}
+
+  private record RefreshRow(UUID id, String subject, Instant expiresAt, Instant revokedAt, UUID replacedBy) {}
+
+  private record ParsedSubject(String tenantKey, String username) {}
+
   @Transactional
-  public String mintOnLogin(UUID userId, String username) {
-    String raw = generateOpaque();
-    String hash = sha256Hex(raw);
+  public TokenPair mintOnLogin(String tenantKey, String username) {
+    if (tenantKey == null || tenantKey.isBlank()) throw new IllegalArgumentException("Missing tenantKey");
+    if (username == null || username.isBlank()) throw new IllegalArgumentException("Missing username");
 
-    RefreshToken rt = new RefreshToken();
-    rt.setId(UUID.randomUUID());
-    rt.setSubject(username);
-    rt.setUsername(username);
-    rt.setTokenHash(hash);
-    Instant now = Instant.now();
-    rt.setCreatedAt(now);
-    rt.setUpdatedAt(now);
-    rt.setExpiresAt(now.plus(Duration.ofDays(30)));
+    UUID tenantId = requireTenantId(tenantKey);
+    String u = requireUserInTenant(tenantId, username);
+    List<String> roles = loadRolesBestEffort(tenantId, u);
 
-    repo.save(rt);
-    // light cleanup
-    repo.deleteExpiredOrRevoked(Instant.now());
-    return raw;
+    UUID id = UUID.randomUUID();
+    UUID familyId = UUID.randomUUID();
+
+    String token = newToken();
+    String tokenHash = sha256B64Url(token);
+
+    insertRefreshToken(
+        id,
+        buildSubject(tenantKey, u),
+        tokenHash,
+        Instant.now(clock).plus(refreshTtl),
+        tenantId,
+        u,
+        familyId
+    );
+
+    return new TokenPair(u, roles, token);
   }
 
-  // rotates if presented token is valid, returns new refresh token and the username
   @Transactional
-  public TokenPair rotate(UUID userId, String presentedRefresh) {
-    String hash = sha256Hex(Objects.requireNonNullElse(presentedRefresh, ""));
-    Optional<RefreshToken> found = repo.findByTokenHash(hash);
-    if (found.isEmpty()) throw new IllegalArgumentException("invalid refresh token");
+  public TokenPair rotate(String tenantKey, String presentedRefreshToken) {
+    if (tenantKey == null || tenantKey.isBlank()) throw new IllegalArgumentException("Missing tenantKey");
+    if (presentedRefreshToken == null || presentedRefreshToken.isBlank()) throw new IllegalArgumentException("Missing refreshToken");
 
-    RefreshToken current = found.get();
-    if (current.isExpired() || current.isRevoked()) throw new IllegalStateException("refresh not usable");
+    String presentedHash = sha256B64Url(presentedRefreshToken);
+    RefreshRow current = findLatestByHashForUpdate(presentedHash);
+    if (current == null) throw new IllegalArgumentException("Invalid refresh token");
 
-    current.setRevokedAt(Instant.now());
-    repo.save(current);
+    ParsedSubject sub = parseSubject(current.subject);
+    if (!tenantKey.equals(sub.tenantKey)) throw new IllegalArgumentException("Tenant mismatch");
 
-    String nextRaw = generateOpaque();
-    String nextHash = sha256Hex(nextRaw);
+    Instant now = Instant.now(clock);
+    if (current.expiresAt != null && current.expiresAt.isBefore(now)) throw new IllegalArgumentException("Refresh token expired");
+    if (current.revokedAt != null) throw new IllegalArgumentException("Refresh token revoked");
+    if (current.replacedBy != null) throw new IllegalArgumentException("Refresh token already rotated");
 
-    RefreshToken next = new RefreshToken();
-    next.setId(UUID.randomUUID());
-    next.setSubject(current.getUsername());
-    next.setUsername(current.getUsername());
-    Instant now = Instant.now();
-    next.setCreatedAt(now);
-    next.setUpdatedAt(now);
-    next.setExpiresAt(now.plus(Duration.ofDays(30)));
-    next.setTokenHash(nextHash);
-    repo.save(next);
+    UUID tenantId = requireTenantId(tenantKey);
+    String u = requireUserInTenant(tenantId, sub.username);
+    List<String> roles = loadRolesBestEffort(tenantId, u);
 
-    repo.deleteExpiredOrRevoked(Instant.now());
-    return new TokenPair(nextRaw, current.getUsername());
+    UUID familyId = jdbc.queryForObject(
+        "select family_id from refresh_token where id = ?",
+        (rs, rowNum) -> (UUID) rs.getObject(1),
+        current.id
+    );
+
+    UUID newId = UUID.randomUUID();
+    Instant newExpiresAt = now.plus(refreshTtl);
+
+    String newToken = newToken();
+    String newTokenHash = sha256B64Url(newToken);
+
+    revoke(current.id, now, newId);
+
+    insertRefreshToken(
+        newId,
+        buildSubject(tenantKey, u),
+        newTokenHash,
+        newExpiresAt,
+        tenantId,
+        u,
+        familyId
+    );
+
+    return new TokenPair(u, roles, newToken);
   }
 
-  private static String generateOpaque() {
-    byte[] rnd = new byte[32];
-    new java.security.SecureRandom().nextBytes(rnd);
-    return Base64.getUrlEncoder().withoutPadding().encodeToString(rnd);
-  }
-
-  private static String sha256Hex(String s) {
+  private UUID requireTenantId(String tenantKey) {
     try {
-      MessageDigest md = MessageDigest.getInstance("SHA-256");
-      byte[] out = md.digest(s.getBytes(StandardCharsets.UTF_8));
-      StringBuilder sb = new StringBuilder(out.length * 2);
-      for (byte b : out) sb.append(String.format("%02x", b));
-      return sb.toString();
+      return jdbc.queryForObject(
+          "select id from iam_tenant where tenant_key = ?",
+          (rs, rowNum) -> (UUID) rs.getObject(1),
+          tenantKey
+      );
+    } catch (EmptyResultDataAccessException e) {
+      throw new IllegalArgumentException("Unknown tenant: " + tenantKey);
+    }
+  }
+
+  private String requireUserInTenant(UUID tenantId, String username) {
+    try {
+      return jdbc.queryForObject(
+          "select username from iam_user where tenant_id = ? and username = ?",
+          (rs, rowNum) -> rs.getString(1),
+          tenantId, username
+      );
+    } catch (EmptyResultDataAccessException e) {
+      throw new IllegalArgumentException("Unknown user in tenant");
+    }
+  }
+
+  private List<String> loadRolesBestEffort(UUID tenantId, String username) {
+    try {
+      return jdbc.queryForList(
+          """
+          select r.name
+            from iam_role r
+            join iam_user_role ur
+              on ur.role_id = r.id
+             and ur.tenant_id = r.tenant_id
+           where ur.tenant_id = ?
+             and ur.username = ?
+           order by r.name
+          """,
+          String.class,
+          tenantId, username
+      );
     } catch (Exception e) {
-      throw new RuntimeException(e);
+      return List.of();
+    }
+  }
+
+  private RefreshRow findLatestByHashForUpdate(String tokenHash) {
+    List<RefreshRow> rows = jdbc.query(
+        """
+        select id, subject, expires_at, revoked_at, replaced_by
+          from refresh_token
+         where token_hash = ?
+         for update
+        """,
+        (rs, rowNum) -> new RefreshRow(
+            (UUID) rs.getObject("id"),
+            rs.getString("subject"),
+            rs.getTimestamp("expires_at") == null ? null : rs.getTimestamp("expires_at").toInstant(),
+            rs.getTimestamp("revoked_at") == null ? null : rs.getTimestamp("revoked_at").toInstant(),
+            (UUID) rs.getObject("replaced_by")
+        ),
+        tokenHash
+    );
+    return rows.isEmpty() ? null : rows.get(0);
+  }
+
+  private void revoke(UUID id, Instant now, UUID replacedBy) {
+    jdbc.update(
+        """
+        update refresh_token
+           set revoked_at = ?,
+               replaced_by = ?,
+               revoke_reason = 'ROTATED'
+         where id = ?
+        """,
+        Timestamp.from(now),
+        replacedBy,
+        id
+    );
+  }
+
+  private void insertRefreshToken(
+      UUID id,
+      String subject,
+      String tokenHash,
+      Instant expiresAt,
+      UUID tenantId,
+      String username,
+      UUID familyId
+  ) {
+    jdbc.update(con -> {
+      PreparedStatement ps = con.prepareStatement(
+          """
+          insert into refresh_token (id, subject, token_hash, expires_at, tenant_id, username, family_id)
+          values (?, ?, ?, ?, ?, ?, ?)
+          """
+      );
+      ps.setObject(1, id);
+      ps.setString(2, subject);
+      ps.setString(3, tokenHash);
+      ps.setTimestamp(4, Timestamp.from(expiresAt));
+      ps.setObject(5, tenantId);
+      ps.setString(6, username);
+      ps.setObject(7, familyId);
+      return ps;
+    });
+  }
+
+  private String buildSubject(String tenantKey, String username) {
+    return tenantKey + ":" + username;
+  }
+
+  private ParsedSubject parseSubject(String subject) {
+    if (subject == null) throw new IllegalArgumentException("Invalid subject");
+    int idx = subject.indexOf(':');
+    if (idx <= 0 || idx == subject.length() - 1) throw new IllegalArgumentException("Invalid subject");
+    return new ParsedSubject(subject.substring(0, idx), subject.substring(idx + 1));
+  }
+
+  private String newToken() {
+    byte[] b = new byte[32];
+    rng.nextBytes(b);
+    return B64_URL.encodeToString(b);
+  }
+
+  private String sha256B64Url(String token) {
+    try {
+      var md = java.security.MessageDigest.getInstance("SHA-256");
+      byte[] digest = md.digest(token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return B64_URL.encodeToString(digest);
+    } catch (Exception e) {
+      throw new IllegalStateException("SHA-256 not available", e);
     }
   }
 }
