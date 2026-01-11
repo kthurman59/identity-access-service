@@ -24,3 +24,5 @@ docker/app.jar
 target/
 docker/*.jar
 docker/.env
+src/main/resources/application-local.yml
+src/main/resources/application-dev.yml
