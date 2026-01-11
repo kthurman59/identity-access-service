@@ -1,91 +1,54 @@
+// src/main/java/com/kevdev/iam/web/AuthController.java
 package com.kevdev.iam.web;
 
 import com.kevdev.iam.security.RefreshTokenService;
-import com.kevdev.iam.security.TokenService;
+import com.kevdev.iam.security.RefreshTokenService.TokenPair;
+import com.kevdev.iam.web.dto.AuthResponse;
+import com.kevdev.iam.web.dto.LoginRequest;
+import com.kevdev.iam.web.dto.RefreshRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RestController;
-
-import java.util.List;
-import java.util.Map;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
+@RequestMapping
 public class AuthController {
 
-  private final AuthenticationManager authManager;
-  private final TokenService tokenService;
-  private final RefreshTokenService refreshTokenService;
+    private final AuthenticationManager authenticationManager;
+    private final RefreshTokenService refreshTokenService;
 
-  public AuthController(
-      AuthenticationManager authManager,
-      TokenService tokenService,
-      RefreshTokenService refreshTokenService
-  ) {
-    this.authManager = authManager;
-    this.tokenService = tokenService;
-    this.refreshTokenService = refreshTokenService;
-  }
+    public AuthController(AuthenticationManager authenticationManager,
+                          RefreshTokenService refreshTokenService) {
+        this.authenticationManager = authenticationManager;
+        this.refreshTokenService = refreshTokenService;
+    }
 
-  public record LoginRequest(
-      @NotBlank String username,
-      @NotBlank String password
-  ) {}
+    @PostMapping("/auth/login")
+    public AuthResponse login(
+            @RequestHeader("X-Tenant-Key") @NotBlank String tenantKey,
+            @RequestBody @Valid LoginRequest request
+    ) {
+        Authentication auth = authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.username(), request.password())
+        );
+        UserDetails user = (UserDetails) auth.getPrincipal();
+        String subject = tenantKey + ":" + user.getUsername();
 
-  public record RefreshRequest(
-      @NotBlank String refreshToken
-  ) {}
+        TokenPair pair = refreshTokenService.mintOnLogin(user, subject);
+        return new AuthResponse(pair.accessToken(), pair.refreshToken());
+    }
 
-  public record TokenResponse(
-      String accessToken,
-      String refreshToken
-  ) {}
-
-  @PostMapping("/auth/login")
-  public ResponseEntity<TokenResponse> login(
-      @RequestHeader("X-Tenant-Key") String tenantKey,
-      @Valid @RequestBody LoginRequest req
-  ) {
-    var auth = authManager.authenticate(
-        new UsernamePasswordAuthenticationToken(req.username(), req.password())
-    );
-    String username = auth.getName();
-
-    // mint refresh and load roles
-    RefreshTokenService.TokenPair pair = refreshTokenService.mintOnLogin(tenantKey, username);
-
-    // subject format must match RefreshTokenService buildSubject
-    String subject = tenantKey + ":" + pair.username();
-
-    String access = tokenService.issueAccessToken(
-        subject,
-        pair.roles(),
-        Map.of("tenant", tenantKey)
-    );
-
-    return ResponseEntity.ok(new TokenResponse(access, pair.refreshToken()));
-  }
-
-  @PostMapping("/auth/refresh")
-  public ResponseEntity<TokenResponse> refresh(
-      @RequestHeader("X-Tenant-Key") String tenantKey,
-      @Valid @RequestBody RefreshRequest req
-  ) {
-    RefreshTokenService.TokenPair pair = refreshTokenService.rotate(tenantKey, req.refreshToken());
-    String subject = tenantKey + ":" + pair.username();
-
-    String access = tokenService.issueAccessToken(
-        subject,
-        pair.roles(),
-        Map.of("tenant", tenantKey)
-    );
-
-    return ResponseEntity.ok(new TokenResponse(access, pair.refreshToken()));
-  }
+    @PostMapping("/auth/refresh")
+    public AuthResponse refresh(
+            @RequestHeader("X-Tenant-Key") @NotBlank String tenantKey,
+            @RequestBody @Valid RefreshRequest request
+    ) {
+        TokenPair pair = refreshTokenService.rotate(tenantKey, request.refreshToken());
+        return new AuthResponse(pair.accessToken(), pair.refreshToken());
+    }
 }
 

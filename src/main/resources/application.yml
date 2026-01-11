@@ -1,30 +1,52 @@
 server:
   port: 8082
 
-security:
-  jwt:
-    secret: ${SECURITY_JWT_SECRET}
-    issuer: ias
-    access-token-ttl-seconds: 900
 spring:
+  application:
+    name: identity-access-service
   datasource:
-    url: jdbc:postgresql://postgres:5432/iam
-    username: iam
-    password: iam
-    driver-class-name: org.postgresql.Driver
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/iam}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    hikari:
+      maximum-pool-size: ${SPRING_DATASOURCE_POOL_MAX:10}
+      minimum-idle: ${SPRING_DATASOURCE_POOL_MIN:2}
+      idle-timeout: 30000
+      connection-timeout: 30000
   jpa:
     hibernate:
       ddl-auto: none
-    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: false
+        jdbc:
+          time_zone: UTC
   flyway:
     enabled: true
-    locations: classpath:db/migration
+    baseline-on-migrate: true
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,mappings,flyway
+        include: health,info
   endpoint:
-    flyway:
-      enabled: true
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    org.springframework.security: INFO
+    com.kevdev.iam: DEBUG
+
+ias:
+  jwt:
+    issuer: ${IAS_JWT_ISSUER:iamauth}
+    access-ttl-minutes: ${IAS_JWT_ACCESS_TTL_MINUTES:15}
+    secret:
+      b64: ${IAS_JWT_SECRET_B64}
+  refresh:
+    ttl: ${IAS_REFRESH_TTL:30d}
+
