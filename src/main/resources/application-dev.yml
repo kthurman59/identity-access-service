@@ -1,47 +1,21 @@
-# src/main/resources/application-dev.yml
-
-server:
-  port: 8082
-
 spring:
   datasource:
     url: jdbc:postgresql://localhost:5433/iam
-    username: iam
-    password: iam
-  jpa:
-    open-in-view: false
-    hibernate:
-      ddl-auto: none
-    properties:
-      hibernate:
-        format_sql: true
-  flyway:
-    enabled: true
-    locations: classpath:db/migration,classpath:db/dev
-    baseline-on-migrate: true
+    username: postgres
+    password: postgres
 
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,mappings,flyway,env
-  endpoint:
-    health:
-      show-details: always
+springdoc:
+  api-docs:
+    enabled: true
+    path: /v3/api-docs
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui
+    operationsSorter: alpha
+    tagsSorter: alpha
 
 logging:
   level:
-    root: INFO
-    org.springframework.security: INFO
-    com.kevdev: DEBUG
-
-ias:
-  tenant:
-    header-name: X-Tenant-Key
-    default-key: dev
-  jwt:
-    issuer: ias-dev
-    secret:
-      b64: ${IAS_JWT_SECRET_B64:AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=}
-    access-ttl-minutes: 60
+    org.springframework.security: DEBUG
+    com.kevdev.iam: DEBUG
 

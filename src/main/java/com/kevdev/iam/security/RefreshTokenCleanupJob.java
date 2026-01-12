@@ -1,26 +1,29 @@
 package com.kevdev.iam.security;
 
 import com.kevdev.iam.repo.RefreshTokenRepository;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-
-import java.time.Instant;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
-@ConditionalOnProperty(prefix = "ias.tasks", name = "scheduling-enabled", havingValue = "true", matchIfMissing = false)
 public class RefreshTokenCleanupJob {
 
-  private final RefreshTokenRepository refreshTokenRepository;
+  private final RefreshTokenRepository repo;
 
-  public RefreshTokenCleanupJob(RefreshTokenRepository refreshTokenRepository) {
-    this.refreshTokenRepository = refreshTokenRepository;
+  public RefreshTokenCleanupJob(RefreshTokenRepository repo) {
+    this.repo = repo;
   }
 
-  // daily cleanup in dev or prod when enabled
-  @Scheduled(cron = "0 0 3 * * *")
+  // runs every hour on the hour
+  @Transactional
+  @Scheduled(cron = "0 0 * * * *")
   public void purge() {
-    refreshTokenRepository.deleteExpiredOrRevoked(Instant.now());
+    Instant now = Instant.now();
+    // these repository methods must already exist as used in your tests
+    repo.deleteAllExpired(now);
+    repo.deleteAllRevokedOlderThan(now.minus(30, ChronoUnit.DAYS));
   }
 }
 
