@@ -1,15 +1,18 @@
-# build
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+# syntax=docker/dockerfile:1
+
+FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY . .
-RUN ./mvnw -B -DskipTests package
+RUN ./mvnw -B -DskipTests package && \
+    JAR="$(ls target/*.jar | head -n 1)" && \
+    cp "$JAR" /app/app.jar
 
-# runtime
 FROM eclipse-temurin:21-jre
-WORKDIR /app
-COPY --from=build /app/target/*.jar /app/app.jar
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -XX:+ExitOnOutOfMemoryError"
+WORKDIR /app
+COPY --from=build /app/app.jar /app/app.jar
+RUN useradd --system --create-home --uid 10001 appuser
+USER appuser
 EXPOSE 8082
-STOPSIGNAL SIGTERM
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
