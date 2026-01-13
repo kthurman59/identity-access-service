@@ -29,7 +29,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,info
   endpoint:
     health:
       probes:
@@ -44,11 +44,9 @@ logging:
 ias:
   jwt:
     issuer: ${IAS_JWT_ISSUER:iamauth}
+    access-ttl-minutes: ${IAS_JWT_ACCESS_TTL_MINUTES:15}
     secret:
       b64: ${IAS_JWT_SECRET_B64}
-    access-ttl: ${IAS_ACCESS_TOKEN_TTL:PT15M}
   refresh:
     ttl: ${IAS_REFRESH_TOKEN_TTL:P30D}
-    cleanup:
-      cron: "0 0 3 * * *"
 

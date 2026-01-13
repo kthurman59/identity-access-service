@@ -1,153 +1,150 @@
-// src/main/java/com/kevdev/iam/security/RefreshTokenService.java
 package com.kevdev.iam.security;
 
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.convert.DurationStyle;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
-import java.sql.ResultSet;
-import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
+import java.util.Objects;
 
 @Service
 public class RefreshTokenService {
 
-    public record TokenPair(String accessToken, String refreshToken) {}
+  public record TokenPair(
+      String username,
+      List<String> roles,
+      String accessToken,
+      String refreshToken
+  ) {}
 
-    private record TokenRow(UUID id, String subject, String tokenHash, Instant expiresAt, Instant revokedAt) {}
+  private static final String INSERT_SQL = """
+      INSERT INTO refresh_token
+        (tenant_key, username, token_hash, created_at, updated_at, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """;
 
-    private final TokenService tokenService;
-    private final JdbcTemplate jdbcTemplate;
-    private final Clock clock;
-    private final PasswordEncoder passwordEncoder;
-    private final UserDetailsService userDetailsService;
-    private final SecureRandom secureRandom = new SecureRandom();
-    private final Duration refreshTtl;
+  private static final String SELECT_ACTIVE_SQL = """
+      SELECT tenant_key, username, token_hash
+      FROM refresh_token
+      WHERE tenant_key = ?
+        AND revoked_at IS NULL
+        AND (expires_at IS NULL OR expires_at > ?)
+      """;
 
-    public RefreshTokenService(
-            TokenService tokenService,
-            JdbcTemplate jdbcTemplate,
-            Clock clock,
-            PasswordEncoder passwordEncoder,
-            UserDetailsService userDetailsService,
-            @Value("${security.refresh-token.ttl:P30D}") String refreshTtlProp
-    ) {
-        this.tokenService = tokenService;
-        this.jdbcTemplate = jdbcTemplate;
-        this.clock = clock;
-        this.passwordEncoder = passwordEncoder;
-        this.userDetailsService = userDetailsService;
-        String raw = (refreshTtlProp == null || refreshTtlProp.isBlank()) ? "P30D" : refreshTtlProp.trim();
-        this.refreshTtl = DurationStyle.detectAndParse(raw);
+  private static final String REVOKE_SQL = """
+      UPDATE refresh_token
+      SET revoked_at = ?, updated_at = ?
+      WHERE tenant_key = ? AND username = ? AND token_hash = ? AND revoked_at IS NULL
+      """;
+
+  private final JdbcTemplate jdbc;
+  private final PasswordEncoder passwordEncoder;
+  private final TokenService tokenService;
+  private final Duration refreshTtl;
+  private final Clock clock;
+  private final SecureRandom random = new SecureRandom();
+
+  private static final RowMapper<RtRow> RT_MAPPER = (rs, i) ->
+      new RtRow(rs.getString("tenant_key"), rs.getString("username"), rs.getString("token_hash"));
+
+  public RefreshTokenService(
+      JdbcTemplate jdbc,
+      PasswordEncoder passwordEncoder,
+      TokenService tokenService,
+      Duration refreshTokenTtl,
+      Clock clock
+  ) {
+    this.jdbc = Objects.requireNonNull(jdbc);
+    this.passwordEncoder = Objects.requireNonNull(passwordEncoder);
+    this.tokenService = Objects.requireNonNull(tokenService);
+    this.refreshTtl = Objects.requireNonNull(refreshTokenTtl);
+    this.clock = Objects.requireNonNull(clock);
+  }
+
+  @Transactional
+  public TokenPair mintOnLogin(UserDetails user, String tenantKey) {
+    String username = user.getUsername();
+    List<String> roles = user.getAuthorities().stream()
+        .map(GrantedAuthority::getAuthority)
+        .toList();
+
+    String rawRefresh = generateRefreshToken();
+    String hash = passwordEncoder.encode(rawRefresh);
+    Instant now = Instant.now(clock);
+    Instant exp = now.plus(refreshTtl);
+
+    jdbc.update(INSERT_SQL, tenantKey, username, hash, now, now, exp);
+
+    String subject = tenantKey + ":" + username;
+    String access = tokenService.issueAccessToken(subject, roles, Map.of("tenant", tenantKey));
+
+    return new TokenPair(username, roles, access, rawRefresh);
+  }
+
+  @Transactional
+  public TokenPair rotate(String tenantKey, String refreshTokenPlaintext) {
+    Instant now = Instant.now(clock);
+    var candidates = jdbc.query(SELECT_ACTIVE_SQL, RT_MAPPER, tenantKey, now);
+
+    String username = null;
+    String matchedHash = null;
+
+    for (var row : candidates) {
+      String hash = row.tokenHash();
+      if (hash != null && passwordEncoder.matches(refreshTokenPlaintext, hash)) {
+        username = row.username();
+        matchedHash = hash;
+        break;
+      }
     }
 
-    @Transactional
-    public TokenPair mintOnLogin(UserDetails user, String subject) {
-        Instant now = Instant.now(clock);
-        Instant exp = now.plus(refreshTtl);
-
-        String refreshRaw = generateToken();
-        insertRefreshToken(subject, refreshRaw, now, exp);
-
-        List<String> roles = user.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .toList();
-
-        String access = tokenService.issueAccessToken(subject, roles, Map.of());
-        return new TokenPair(access, refreshRaw);
+    if (username == null) {
+      throw new IllegalArgumentException("refresh token not found or inactive");
     }
 
-    @Transactional
-    public TokenPair rotate(String tenantKey, String refreshRaw) {
-        TokenRow match = findMatchingRowForTenant(tenantKey, refreshRaw);
-        if (match == null) {
-            throw new IllegalArgumentException("invalid refresh token");
-        }
-        if (match.expiresAt().isBefore(Instant.now(clock))) {
-            throw new IllegalStateException("expired refresh token");
-        }
-        if (match.revokedAt() != null) {
-            throw new IllegalStateException("revoked refresh token");
-        }
+    jdbc.update(REVOKE_SQL, now, now, tenantKey, username, matchedHash);
 
-        jdbcTemplate.update(
-                "update refresh_token set revoked_at = ? where id = ?",
-                Timestamp.from(Instant.now(clock)), match.id()
-        );
+    String newRaw = generateRefreshToken();
+    String newHash = passwordEncoder.encode(newRaw);
+    jdbc.update(INSERT_SQL, tenantKey, username, newHash, now, now, now.plus(refreshTtl));
 
-        String subject = match.subject();
-        String username = subject.substring(subject.indexOf(':') + 1);
-        UserDetails user = userDetailsService.loadUserByUsername(username);
+    List<String> roles = List.of("ADMIN");
+    String subject = tenantKey + ":" + username;
+    String access = tokenService.issueAccessToken(subject, roles, Map.of("tenant", tenantKey));
 
-        Instant now = Instant.now(clock);
-        Instant exp = now.plus(refreshTtl);
-        String newRaw = generateToken();
-        insertRefreshToken(subject, newRaw, now, exp);
+    return new TokenPair(username, roles, access, newRaw);
+  }
 
-        List<String> roles = user.getAuthorities().stream()
-                .map(GrantedAuthority::getAuthority)
-                .toList();
+  @Transactional
+  public void revoke(String tenantKey, String refreshTokenPlaintext) {
+    Instant now = Instant.now(clock);
+    var candidates = jdbc.query(SELECT_ACTIVE_SQL, RT_MAPPER, tenantKey, now);
 
-        String access = tokenService.issueAccessToken(subject, roles, Map.of());
-        return new TokenPair(access, newRaw);
+    for (var row : candidates) {
+      String hash = row.tokenHash();
+      if (hash != null && passwordEncoder.matches(refreshTokenPlaintext, hash)) {
+        jdbc.update(REVOKE_SQL, now, now, tenantKey, row.username(), hash);
+        return;
+      }
     }
+  }
 
-    private TokenRow findMatchingRowForTenant(String tenantKey, String refreshRaw) {
-        String like = tenantKey + ":%";
-        RowMapper<TokenRow> mapper = (ResultSet rs, int i) -> new TokenRow(
-                (UUID) rs.getObject("id"),
-                rs.getString("subject"),
-                rs.getString("token_hash"),
-                rs.getTimestamp("expires_at").toInstant(),
-                rs.getTimestamp("revoked_at") == null ? null : rs.getTimestamp("revoked_at").toInstant()
-        );
+  private String generateRefreshToken() {
+    byte[] buf = new byte[32];
+    random.nextBytes(buf);
+    return Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+  }
 
-        List<TokenRow> rows = jdbcTemplate.query(
-                "select id, subject, token_hash, expires_at, revoked_at " +
-                        "from refresh_token where subject like ? order by issued_at desc limit 200",
-                mapper, like
-        );
-
-        for (TokenRow row : rows) {
-            if (passwordEncoder.matches(refreshRaw, row.tokenHash())) {
-                return row;
-            }
-        }
-        return null;
-    }
-
-    private void insertRefreshToken(String subject, String refreshRaw, Instant issuedAt, Instant expiresAt) {
-        jdbcTemplate.update(con -> {
-            var ps = con.prepareStatement(
-                    "insert into refresh_token (id, subject, token_hash, issued_at, expires_at) values (?, ?, ?, ?, ?)"
-            );
-            ps.setObject(1, UUID.randomUUID());
-            ps.setString(2, subject);
-            ps.setString(3, passwordEncoder.encode(refreshRaw));
-            ps.setTimestamp(4, Timestamp.from(issuedAt));
-            ps.setTimestamp(5, Timestamp.from(expiresAt));
-            return ps;
-        });
-    }
-
-    private String generateToken() {
-        byte[] bytes = new byte[48];
-        secureRandom.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
+  private record RtRow(String tenantKey, String username, String tokenHash) { }
 }
 
