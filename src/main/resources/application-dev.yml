@@ -7,15 +7,6 @@ spring:
 springdoc:
   api-docs:
     enabled: true
-    path: /v3/api-docs
   swagger-ui:
     enabled: true
-    path: /swagger-ui
-    operationsSorter: alpha
-    tagsSorter: alpha
-
-logging:
-  level:
-    org.springframework.security: DEBUG
-    com.kevdev.iam: DEBUG
 

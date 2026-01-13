@@ -39,9 +39,6 @@ public class SecurityConfig {
             .anyRequest().authenticated()
         );
 
-    // Add once before UsernamePasswordAuthenticationFilter
-    http.addFilterBefore(tenantKeyFilter, UsernamePasswordAuthenticationFilter.class);
-
     return http.build();
   }
 }

@@ -41,6 +41,12 @@ logging:
     org.springframework.security: INFO
     com.kevdev.iam: DEBUG
 
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 ias:
   jwt:
     issuer: ${IAS_JWT_ISSUER:iamauth}
@@ -48,5 +54,5 @@ ias:
     secret:
       b64: ${IAS_JWT_SECRET_B64}
   refresh:
-    ttl: ${IAS_REFRESH_TOKEN_TTL:P30D}
+    ttl: ${IAS_REFRESH_TTL:30d}
 
